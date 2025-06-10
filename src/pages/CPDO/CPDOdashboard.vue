@@ -2,7 +2,6 @@
   <v-app>
     <v-main style="background-color: #f5f5f5;">
       <v-container fluid class="pa-6">
-        <!-- Top Section: Transaction Info, New Application, Search -->
         <v-row align="center" class="mb-6">
           <v-col cols="12" sm="4" md="3">
             <v-card flat rounded="lg" color="#8b95d3" class="pa-3 text-center">
@@ -37,7 +36,6 @@
           </v-col>
         </v-row>
 
-        <!-- Table Header -->
         <v-row class="mb-2">
           <v-col cols="2">
             <v-card flat rounded="lg" color="#8b95d3" class="pa-2 text-center">
@@ -64,10 +62,9 @@
               <span class="font-weight-medium white--text">Status</span>
             </v-card>
           </v-col>
-          <v-col cols="2"></v-col> <!-- For the "View Application" button -->
+          <v-col cols="2"></v-col>
         </v-row>
 
-        <!-- Application Data Rows -->
         <v-card class="mb-6" elevation="2" rounded="lg">
           <v-list density="comfortable" class="py-0">
             <template v-for="(application, index) in filteredApplications" :key="application.id">
@@ -87,6 +84,7 @@
                       class="status-select"
                       rounded="lg"
                       :bg-color="application.status === 'Completed' ? '#D4EDDA' : '#F8D7DA'"
+                      @update:model-value="updateApplicationStatus(application.id, $event)"
                       @click.stop=""
                     ></v-select>
                   </v-col>
@@ -96,7 +94,7 @@
                       color="#002060"
                       class="white--text"
                       rounded="lg"
-                      @click.stop="viewApplication(application.id)"
+                      @click.stop="viewApplicationStatus()"
                     >
                       View Application
                     </v-btn>
@@ -105,10 +103,12 @@
               </v-list-item>
               <v-divider v-if="index < filteredApplications.length - 1"></v-divider>
             </template>
+            <v-list-item v-if="filteredApplications.length === 0" class="text-center pa-4">
+                No applications found.
+            </v-list-item>
           </v-list>
         </v-card>
 
-        <!-- Remarks Section -->
         <v-row class="mb-4" v-if="selectedApplicationForRemarks !== null">
           <v-col cols="12">
             <v-card flat rounded="lg" color="#8b95d3" class="pa-3 text-center mb-4">
@@ -123,18 +123,33 @@
                 v-model="remarksText"
                 variant="outlined"
                 rows="3"
+                auto-grow
                 hide-details
                 label="Type your remarks here..."
                 rounded="lg"
                 bg-color="#f5f5f5"
+                @blur="updateApplicationRemarks()"
               ></v-textarea>
+
+              <v-divider class="my-4"></v-divider>
+
+              <h4 class="text-subtitle-1 mb-2">Previous Remarks:</h4>
+              <v-list dense>
+                <v-list-item v-for="(remark, i) in currentApplicationRemarks" :key="remark.id || i" class="py-1">
+                  <v-list-item-title class="text-caption text-wrap">{{ remark.remark_text }}</v-list-item-title>
+                  <v-list-item-subtitle class="text-right text-caption grey--text">
+                    - {{ remark.remark_by }} on {{ formatDate(remark.created_at) }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+                <v-list-item v-if="currentApplicationRemarks.length === 0">
+                    <v-list-item-title class="text-caption text-center">No previous remarks.</v-list-item-title>
+                </v-list-item>
+              </v-list>
             </v-card>
           </v-col>
         </v-row>
 
-        <!-- View Compliance Progress Button and Logout Button -->
         <v-row align="center" justify="space-between">
-         
           <v-col cols="auto" class="py-0">
             <v-btn
               color="#002060"
@@ -154,47 +169,21 @@
 </template>
 
 <script>
+import axios from 'axios';
+
 export default {
-  name: 'AdminDashboard',
+  name: 'CPDODashboard',
   data() {
     return {
-      newApplicationType: 'New Application', // For the "New Application" dropdown
-      searchQuery: '', // For the search text field
-      remarksText: '', // For the remarks textarea
-      selectedApplicationForRemarks: null, // New: Stores the ID of the selected application for remarks
-      applications: [
-        {
-          id: 1,
-          dateReceived: '04/02/2025',
-          applicationNumber: '(BP-2025-001-C)',
-          professionals: 'Civil Engineer',
-          user: 'Laurence Francisco',
-          status: 'Completed',
-          remarks: 'Initial review complete. Awaiting structural plan revisions.' // Example remark
-        },
-        {
-          id: 2,
-          dateReceived: '04/02/2025',
-          applicationNumber: '05124213234',
-          professionals: 'Civil Engineer',
-          user: 'Aaron James Cortez',
-          status: 'Incomplete',
-          remarks: ''
-        },
-        {
-          id: 3,
-          dateReceived: '04/02/2025',
-          applicationNumber: '05124213234',
-          professionals: 'Architect',
-          user: 'Jomar Cerda',
-          status: 'Completed',
-          remarks: 'All documents submitted and approved.'
-        },
-      ],
+      newApplicationType: 'New Application',
+      searchQuery: '',
+      remarksText: '',
+      selectedApplicationForRemarks: null,
+      applications: [],
+      currentApplicationRemarks: [],
     };
   },
   computed: {
-    // Filter applications based on search query
     filteredApplications() {
       if (!this.searchQuery) {
         return this.applications;
@@ -206,109 +195,166 @@ export default {
         )
       );
     },
-    // Computed property to get the selected application's user for the remarks header
     getSelectedApplicationUser() {
       const selectedApp = this.applications.find(app => app.id === this.selectedApplicationForRemarks);
       return selectedApp ? selectedApp.user : 'Selected User';
     }
   },
   methods: {
-    toggleRemarks(applicationId) {
-      // If the same application is clicked again, hide remarks
-      if (this.selectedApplicationForRemarks === applicationId) {
-        this.selectedApplicationForRemarks = null;
-        this.remarksText = ''; // Clear remarks when hidden
-      } else {
-        this.selectedApplicationForRemarks = applicationId;
-        // Load remarks for the selected application
-        const selectedApp = this.applications.find(app => app.id === applicationId);
-        this.remarksText = selectedApp ? selectedApp.remarks : '';
+    formatDate(timestamp) {
+        if (!timestamp) return '';
+        // Format to a more readable date-time, e.g., "Jun 10, 2025, 02:30 PM"
+        const date = new Date(timestamp);
+        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    },
+    async fetchApplications() {
+      try {
+        // !!! IMPORTANT: Ensure this URL exactly matches where your PHP script is served !!!
+        const response = await axios.get('http://localhost/compliance-monitoring-vue-umali/src/pages/CPDO/cpdo_dashboard.php', {
+          params: {
+            action: 'getApplications'
+          }
+        });
+
+        // Debugging: Log the full response data
+        console.log('Full API Response for applications:', response.data);
+
+        if (response.data.success) {
+          this.applications = response.data.applications;
+          console.log('Applications fetched:', this.applications);
+        } else {
+          // If success is false, but message might be missing (shouldn't happen with updated PHP)
+          console.error('Failed to fetch applications:', response.data.message || 'Unknown error from server.');
+          alert('Failed to load applications: ' + (response.data.message || 'Please check console for details.'));
+        }
+      } catch (error) {
+        console.error('Error fetching applications:', error);
+        alert('Network error or server issue while fetching applications. Check console for details.');
       }
     },
-    viewApplication(applicationId) {
-      // Navigate to Pages/Admin/status.vue with the application ID
-      // This assumes you have Vue Router configured in your project
-      // and a route like: { path: '/admin/status/:id', component: StatusPage }
-      console.log(`Navigating to /pages/CPDO/status.vue for application ID: ${applicationId}`);
-      if (this.$router) {
-        this.$router.push({ path: '/pages/CPDO/status', query: { id: applicationId } });
-      } else {
-        console.error('Vue Router is not initialized. Please ensure it is set up.');
+    async fetchRemarksForApplication(applicationId) {
+        try {
+            // !!! IMPORTANT: Ensure this URL exactly matches where your PHP script is served !!!
+            const response = await axios.get('http://localhost/compliance-monitoring-vue-umali/src/pages/CPDO/cpdo_dashboard.php', {
+                params: {
+                    action: 'getApplicationRemarks',
+                    id: applicationId
+                }
+            });
+            if (response.data.success) {
+                return response.data.remarks;
+            } else {
+                console.error('Failed to fetch remarks:', response.data.message);
+                return [];
+            }
+        } catch (error) {
+            console.error('Error fetching remarks:', error);
+            alert('Error fetching remarks for application ' + applicationId);
+            return [];
+        }
+    },
+    async updateApplicationStatus(applicationId, newStatus) {
+      const application = this.applications.find(app => app.id === applicationId);
+      if (!application) return;
+
+      try {
+        // !!! IMPORTANT: Ensure this URL exactly matches where your PHP script is served !!!
+        const response = await axios.post('http://localhost/compliance-monitoring-vue-umali/src/pages/CPDO/cpdo_dashboard.php', {
+          action: 'updateApplication',
+          id: applicationId,
+          status: newStatus,
+        });
+        if (response.data.success) {
+          console.log('Application status updated successfully.');
+          // Optionally, refetch applications or update the local array
+          // this.fetchApplications();
+        } else {
+          console.error('Failed to update application status:', response.data.message);
+          alert('Failed to update status: ' + response.data.message);
+          // Revert status in UI if update failed
+          application.status = application.status === 'Completed' ? 'Incomplete' : 'Completed'; // Simple toggle back
+        }
+      } catch (error) {
+        console.error('Error updating application status:', error);
+        alert('Network error or server issue while updating application status.');
+        // Revert status in UI on network error
+        application.status = application.status === 'Completed' ? 'Incomplete' : 'Completed';
       }
     },
-    viewComplianceProgress() {
-      // Navigate to Pages/Admin/status2.vue
-      // This assumes you have Vue Router configured in your project
-      // and a route like: { path: '/admin/status2', component: Status2Page }
-      console.log('Navigating to /pages/Admin/status2.vue');
+    async updateApplicationRemarks() {
+      if (this.selectedApplicationForRemarks === null) return;
+      if (!this.remarksText.trim()) {
+          console.log("Remarks text is empty or only whitespace, not saving.");
+          return;
+      }
+
+      // Check if the remark is identical to the very last one to prevent duplicates on blur
+      const latestExistingRemark = this.currentApplicationRemarks[this.currentApplicationRemarks.length - 1]?.remark_text;
+      if (this.remarksText.trim() === latestExistingRemark) {
+          console.log("Remarks unchanged from latest, not sending new remark.");
+          return;
+      }
+
+      try {
+        // !!! IMPORTANT: Ensure this URL exactly matches where your PHP script is served !!!
+        const response = await axios.post('http://localhost/compliance-monitoring-vue-umali/src/pages/CPDO/cpdo_dashboard.php', {
+          action: 'updateApplication',
+          id: this.selectedApplicationForRemarks,
+          remarks: this.remarksText.trim() // Send trimmed remarks
+        });
+        if (response.data.success) {
+          console.log('Application remarks added successfully.');
+          // Refetch remarks to show the newly added one
+          this.currentApplicationRemarks = await this.fetchRemarksForApplication(this.selectedApplicationForRemarks);
+          this.remarksText = ''; // Clear the input field
+        } else {
+          console.error('Failed to add application remarks:', response.data.message);
+          alert('Failed to add remarks: ' + response.data.message);
+        }
+      } catch (error) {
+        console.error('Error adding application remarks:', error);
+        alert('Network error or server issue while adding application remarks.');
+      }
+    },
+    async toggleRemarks(applicationId) {
+        // If switching to a new application or closing the current one, save current remarks first
+        if (this.selectedApplicationForRemarks !== null && this.remarksText.trim() !== '' && this.selectedApplicationForRemarks !== applicationId) {
+            await this.updateApplicationRemarks();
+        }
+
+        if (this.selectedApplicationForRemarks === applicationId) {
+            // If clicking the currently selected application, close remarks
+            this.selectedApplicationForRemarks = null;
+            this.remarksText = '';
+            this.currentApplicationRemarks = [];
+        } else {
+            // Select new application and fetch its remarks
+            this.selectedApplicationForRemarks = applicationId;
+            this.remarksText = ''; // Clear text area for new remarks
+            this.currentApplicationRemarks = await this.fetchRemarksForApplication(applicationId);
+        }
+    },
+    viewApplicationStatus() {
       if (this.$router) {
-        this.$router.push('/pages/Admin/status2');
+        // Navigates directly to /pages/CPDO/status (no ID passed, as requested)
+        this.$router.push('/pages/CPDO/status');
       } else {
-        console.error('Vue Router is not initialized. Please ensure it is set up.');
+        console.error('Vue Router is not initialized. Cannot redirect to status page.');
       }
     },
     handleLogout() {
       console.log('Logging out...');
-      // Assuming Vue Router is configured and available as this.$router
       if (this.$router) {
-        this.$router.push('/'); // Navigate to the root path
+        // Redirect to the login page or home page
+        this.$router.push('/');
       } else {
         console.error('Vue Router is not initialized. Cannot redirect for logout.');
       }
     }
   },
-  // Ensure Vuetify is properly initialized in your main.js or similar entry file.
-  // Example main.js setup for Vue 3 with Vuetify:
-  // import { createApp } from 'vue';
-  // import App from './App.vue';
-  // import 'vuetify/styles'; // Import Vuetify styles
-  // import { createVuetify } from 'vuetify';
-  // import * as components from 'vuetify/components';
-  // import * as directives from 'vuetify/directives';
-  // import '@mdi/font/css/materialdesignicons.css'; // Import Material Design Icons
-
-  // // Import Vue Router and define routes
-  // import { createRouter, createWebHistory } from 'vue-router';
-  // import StatusPage from './Pages/Admin/status.vue';
-  // import Status2Page from './Pages/Admin/status2.vue';
-  // // Import your AdminDashboard component
-  // import AdminDashboard from './components/AdminDashboard.vue'; // Adjust path as needed
-
-  // const routes = [
-  //   { path: '/', component: AdminDashboard }, // This is the main route for your dashboard
-  //   { path: '/Pages/Admin/status.vue', component: StatusPage },
-  //   { path: '/Pages/Admin/status2.vue', component: Status2Page },
-  // ];
-
-  // const router = createRouter({
-  //   history: createWebHistory(),
-  //   routes,
-  // });
-
-  // const vuetify = createVuetify({
-  //   components,
-  //   directives,
-  //   icons: {
-  //     defaultSet: 'mdi',
-  //   },
-  //   theme: {
-  //     themes: {
-  //       light: {
-  //         colors: {
-  //           primary: '#3F51B5',
-  //           secondary: '#002060',
-  //           info: '#8b95d3', // Custom color for the blue headers
-  //           background: '#f5f5f5',
-  //         },
-  //       },
-  //     },
-  //   },
-  // });
-
-  // createApp(App)
-  //   .use(vuetify)
-  //   .use(router) // Use router
-  //   .mount('#app');
+  mounted() {
+    this.fetchApplications(); // Fetch applications when the component is mounted
+  },
 };
 </script>
 
@@ -319,16 +365,8 @@ export default {
 }
 
 /* Specific styling adjustments for the status select for better visual feedback */
-.status-select .v-field__outline {
+.status-select :deep(.v-field__outline) {
   border-width: 2px !important;
-}
-
-/* Optional: Adjust select input background based on status */
-.status-select.v-select--completed .v-field__input {
-  background-color: #D4EDDA; /* Light green for completed */
-}
-.status-select.v-select--incomplete .v-field__input {
-  background-color: #F8D7DA; /* Light red for incomplete */
 }
 
 /* Added style for selected row to give visual feedback */

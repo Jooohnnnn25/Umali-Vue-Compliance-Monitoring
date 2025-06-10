@@ -2,7 +2,6 @@
   <v-app>
     <v-main style="background-color: #f5f5f5;">
       <v-container fluid class="pa-6">
-        <!-- Top Section: Transaction Info, New Application, Search -->
         <v-row align="center" class="mb-6">
           <v-col cols="12" sm="4" md="3">
             <v-card flat rounded="lg" color="#8b95d3" class="pa-3 text-center">
@@ -33,11 +32,10 @@
               hide-details
               class="rounded-lg"
               bg-color="white"
-            ></v-text-field>
+              @input="debounceSearch" ></v-text-field>
           </v-col>
         </v-row>
 
-        <!-- Table Header -->
         <v-row class="mb-2">
           <v-col cols="2">
             <v-card flat rounded="lg" color="#8b95d3" class="pa-2 text-center">
@@ -64,51 +62,62 @@
               <span class="font-weight-medium white--text">Status</span>
             </v-card>
           </v-col>
-          <v-col cols="2"></v-col> <!-- For the "View Application" button -->
-        </v-row>
+          <v-col cols="2"></v-col> </v-row>
 
-        <!-- Application Data Rows -->
         <v-card class="mb-6" elevation="2" rounded="lg">
           <v-list density="comfortable" class="py-0">
-            <template v-for="(application, index) in filteredApplications" :key="application.id">
-              <v-list-item class="pa-2 border-b" @click="toggleRemarks(application.id)" :class="{ 'selected-row': selectedApplicationForRemarks === application.id }">
-                <v-row align="center">
-                  <v-col cols="2" class="text-center">{{ application.dateReceived }}</v-col>
-                  <v-col cols="2" class="text-center">{{ application.applicationNumber }}</v-col>
-                  <v-col cols="2" class="text-center">{{ application.professionals }}</v-col>
-                  <v-col cols="2" class="text-center">{{ application.user }}</v-col>
-                  <v-col cols="2" class="py-0">
-                    <v-select
-                      v-model="application.status"
-                      :items="['Compliant', 'In Progress']"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      class="status-select"
-                      rounded="lg"
-                      :bg-color="application.status === 'Compliant' ? '#D4EDDA' : '#F8D7DA'"
-                      @click.stop=""
-                    ></v-select>
-                  </v-col>
-                  <v-col cols="2" class="text-center">
-                    <v-btn
-                      small
-                      color="#002060"
-                      class="white--text"
-                      rounded="lg"
-                      @click.stop="viewApplication(application.id)"
-                    >
-                      View Plans
-                    </v-btn>
-                  </v-col>
-                </v-row>
+            <template v-if="applications.length > 0">
+              <template v-for="(application, index) in filteredApplications" :key="application.id">
+                <v-list-item
+                  class="pa-2 border-b"
+                  @click="toggleRemarks(application.id)"
+                  :class="{ 'selected-row': selectedApplicationForRemarks === application.id }"
+                >
+                  <v-row align="center">
+                    <v-col cols="2" class="text-center">{{ application.dateReceived }}</v-col>
+                    <v-col cols="2" class="text-center">{{ application.applicationNumber }}</v-col>
+                    <v-col cols="2" class="text-center">{{ application.professionals }}</v-col>
+                    <v-col cols="2" class="text-center">{{ application.user }}</v-col>
+                    <v-col cols="2" class="py-0">
+                      <v-select
+                        v-model="application.status"
+                        :items="['Compliant', 'In Progress']"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        class="status-select"
+                        rounded="lg"
+                        :bg-color="application.status === 'Compliant' ? '#D4EDDA' : '#F8D7DA'"
+                        @click.stop=""
+                        @update:modelValue="updateApplicationStatus(application.id, application.status)"
+                      ></v-select>
+                    </v-col>
+                    <v-col cols="2" class="text-center">
+                      <v-btn
+                        small
+                        color="#002060"
+                        class="white--text"
+                        rounded="lg"
+                        @click.stop="viewApplication(application.id)"
+                      >
+                        View Plans
+                      </v-btn>
+                    </v-col>
+                  </v-row>
+                </v-list-item>
+                <v-divider v-if="index < filteredApplications.length - 1"></v-divider>
+              </template>
+            </template>
+            <template v-else>
+              <v-list-item>
+                <v-list-item-content class="text-center py-4">
+                  <v-list-item-title>No applications found.</v-list-item-title>
+                </v-list-item-content>
               </v-list-item>
-              <v-divider v-if="index < filteredApplications.length - 1"></v-divider>
             </template>
           </v-list>
         </v-card>
 
-        <!-- Remarks Section -->
         <v-row class="mb-4" v-if="selectedApplicationForRemarks !== null">
           <v-col cols="12">
             <v-card flat rounded="lg" color="#8b95d3" class="pa-3 text-center mb-4">
@@ -128,13 +137,21 @@
                 rounded="lg"
                 bg-color="#f5f5f5"
               ></v-textarea>
+              <div class="d-flex justify-end mt-4">
+                <v-btn
+                  color="#002060"
+                  class="white--text"
+                  rounded="lg"
+                  @click="saveRemarks(selectedApplicationForRemarks)"
+                >
+                  Save Remarks
+                </v-btn>
+              </div>
             </v-card>
           </v-col>
         </v-row>
 
-        <!-- View Compliance Progress Button and Logout Button -->
         <v-row align="center" justify="space-between">
-        
           <v-col cols="auto" class="py-0">
             <v-btn
               color="#002060"
@@ -154,102 +171,146 @@
 </template>
 
 <script>
+import axios from 'axios'; // Import Axios
+
 export default {
-  name: 'AdminDashboard',
+  name: 'EngrDashboard', // Renamed to match context
   data() {
     return {
-      newApplicationType: 'New Application', // For the "New Application" dropdown
-      searchQuery: '', // For the search text field
-      remarksText: '', // For the remarks textarea
-      selectedApplicationForRemarks: null, // New: Stores the ID of the selected application for remarks
-      applications: [
-        {
-          id: 1,
-          dateReceived: '04/02/2025',
-          applicationNumber: '(BP-2025-001-C)',
-          professionals: 'Civil Engineer',
-          user: 'Laurence Francisco',
-          status: 'Compliant',
-          remarks: 'Initial review complete. Awaiting structural plan revisions.' // Example remark
-        },
-        {
-          id: 2,
-          dateReceived: '04/02/2025',
-          applicationNumber: '05124213234',
-          professionals: 'Civil Engineer',
-          user: 'Aaron James Cortez',
-          status: 'In Progress',
-          remarks: ''
-        },
-        {
-          id: 3,
-          dateReceived: '04/02/2025',
-          applicationNumber: '05124213234',
-          professionals: 'Architect',
-          user: 'Jomar Cerda',
-          status: 'Compliant',
-          remarks: 'All documents submitted and approved.'
-        },
-      ],
+      newApplicationType: 'New Application',
+      searchQuery: '',
+      remarksText: '',
+      selectedApplicationForRemarks: null,
+      applications: [], // This will now be populated from the backend
+      // Debounce timer for search
+      searchTimer: null,
+      // Base URL for your PHP backend
+      phpBackendUrl: 'http://localhost/compliance-monitoring-vue-umali/src/pages/Engr/engr_dashboard.php',
     };
   },
   computed: {
-    // Filter applications based on search query
+    // Filter applications based on current search query (if local filtering is desired, otherwise the backend handles it)
+    // For now, we'll let the backend handle filtering by re-fetching. This computed property just mirrors the fetched data.
     filteredApplications() {
-      if (!this.searchQuery) {
         return this.applications;
-      }
-      const query = this.searchQuery.toLowerCase();
-      return this.applications.filter(app =>
-        Object.values(app).some(value =>
-          String(value).toLowerCase().includes(query)
-        )
-      );
     },
-    // Computed property to get the selected application's user for the remarks header
     getSelectedApplicationUser() {
       const selectedApp = this.applications.find(app => app.id === this.selectedApplicationForRemarks);
       return selectedApp ? selectedApp.user : 'Selected User';
     }
   },
+  watch: {
+    // Watch for changes in searchQuery and debounce the API call
+    searchQuery() {
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer);
+      }
+      this.searchTimer = setTimeout(() => {
+        this.fetchApplications();
+      }, 300); // Wait 300ms after user stops typing
+    }
+  },
   methods: {
+    debounceSearch() {
+      // The watcher already handles the debounce, this method is just a placeholder if needed for specific input events
+    },
+    async fetchApplications() {
+      try {
+        const response = await axios.get(this.phpBackendUrl, {
+          params: {
+            action: 'getApplications',
+            searchQuery: this.searchQuery // Pass search query to backend
+          }
+        });
+        if (response.data.success) {
+          this.applications = response.data.applications;
+          console.log("Applications fetched successfully:", this.applications);
+        } else {
+          console.error('Failed to fetch applications:', response.data.message);
+          // Optionally show a user-friendly error
+          alert('Failed to load applications: ' + (response.data.message || 'Unknown error.'));
+        }
+      } catch (error) {
+        console.error('Error fetching applications:', error);
+        // Handle network or server errors
+        alert('Network error or server issue while fetching applications.');
+      }
+    },
+    async updateApplicationStatus(applicationId, newStatus) {
+      try {
+        const response = await axios.put(this.phpBackendUrl, { // Using PUT for updates
+          action: 'updateApplicationStatus',
+          id: applicationId,
+          status: newStatus
+        });
+        if (response.data.success) {
+          console.log(`Status for application ${applicationId} updated to ${newStatus}`);
+          // Optionally, re-fetch applications to ensure local data is consistent
+          // this.fetchApplications();
+        } else {
+          console.error('Failed to update status:', response.data.message);
+          alert('Failed to update status: ' + (response.data.message || 'Unknown error.'));
+          // Revert status if update fails
+          const app = this.applications.find(a => a.id === applicationId);
+          if (app) {
+              app.status = app.status === 'Compliant' ? 'In Progress' : 'Compliant'; // Revert to previous status
+          }
+        }
+      } catch (error) {
+        console.error('Error updating status:', error);
+        alert('Network error or server issue while updating status.');
+      }
+    },
+    async saveRemarks(applicationId) {
+        if (applicationId === null) {
+            alert('Please select an application to add remarks.');
+            return;
+        }
+        try {
+            const response = await axios.put(this.phpBackendUrl, { // Using PUT for updates
+                action: 'updateApplicationRemarks',
+                id: applicationId,
+                remarks: this.remarksText
+            });
+            if (response.data.success) {
+                console.log(`Remarks for application ${applicationId} saved.`);
+                // Update the remarks in the local applications array directly
+                const app = this.applications.find(a => a.id === applicationId);
+                if (app) {
+                    app.remarks = this.remarksText;
+                }
+                alert('Remarks saved successfully!');
+            } else {
+                console.error('Failed to save remarks:', response.data.message);
+                alert('Failed to save remarks: ' + (response.data.message || 'Unknown error.'));
+            }
+        } catch (error) {
+            console.error('Error saving remarks:', error);
+            alert('Network error or server issue while saving remarks.');
+        }
+    },
     toggleRemarks(applicationId) {
-      // If the same application is clicked again, hide remarks
       if (this.selectedApplicationForRemarks === applicationId) {
         this.selectedApplicationForRemarks = null;
         this.remarksText = ''; // Clear remarks when hidden
       } else {
         this.selectedApplicationForRemarks = applicationId;
-        // Load remarks for the selected application
         const selectedApp = this.applications.find(app => app.id === applicationId);
         this.remarksText = selectedApp ? selectedApp.remarks : '';
       }
     },
     viewApplication(applicationId) {
-      // Navigate to Pages/Admin/status.vue with the application ID
-      // This assumes you have Vue Router configured in your project
-      // and a route like: { path: '/admin/status/:id', component: StatusPage }
       console.log(`Navigating to /pages/Engr/status for application ID: ${applicationId}`);
       if (this.$router) {
+        // Make sure your router has a route configured for this path, e.g.:
+        // { path: '/pages/Engr/status', name: 'EngrStatus', component: StatusPage }
         this.$router.push({ path: '/pages/Engr/status', query: { id: applicationId } });
-      } else {
-        console.error('Vue Router is not initialized. Please ensure it is set up.');
-      }
-    },
-    viewComplianceProgress() {
-      // Navigate to Pages/Admin/status2.vue
-      // This assumes you have Vue Router configured in your project
-      // and a route like: { path: '/admin/status2', component: Status2Page }
-      console.log('Navigating to /pages/Admin/status2.vue');
-      if (this.$router) {
-        this.$router.push('/pages/Admin/status2');
       } else {
         console.error('Vue Router is not initialized. Please ensure it is set up.');
       }
     },
     handleLogout() {
       console.log('Logging out...');
-      // Assuming Vue Router is configured and available as this.$router
       if (this.$router) {
         this.$router.push('/'); // Navigate to the root path
       } else {
@@ -257,58 +318,9 @@ export default {
       }
     }
   },
-  // Ensure Vuetify is properly initialized in your main.js or similar entry file.
-  // Example main.js setup for Vue 3 with Vuetify:
-  // import { createApp } from 'vue';
-  // import App from './App.vue';
-  // import 'vuetify/styles'; // Import Vuetify styles
-  // import { createVuetify } from 'vuetify';
-  // import * as components from 'vuetify/components';
-  // import * as directives from 'vuetify/directives';
-  // import '@mdi/font/css/materialdesignicons.css'; // Import Material Design Icons
-
-  // // Import Vue Router and define routes
-  // import { createRouter, createWebHistory } from 'vue-router';
-  // import StatusPage from './Pages/Admin/status.vue';
-  // import Status2Page from './Pages/Admin/status2.vue';
-  // // Import your AdminDashboard component
-  // import AdminDashboard from './components/AdminDashboard.vue'; // Adjust path as needed
-
-  // const routes = [
-  //   { path: '/', component: AdminDashboard }, // This is the main route for your dashboard
-  //   { path: '/Pages/Admin/status.vue', component: StatusPage },
-  //   { path: '/Pages/Admin/status2.vue', component: Status2Page },
-  // ];
-
-  // const router = createRouter({
-  //   history: createWebHistory(),
-  //   routes,
-  // });
-
-  // const vuetify = createVuetify({
-  //   components,
-  //   directives,
-  //   icons: {
-  //     defaultSet: 'mdi',
-  //   },
-  //   theme: {
-  //     themes: {
-  //       light: {
-  //         colors: {
-  //           primary: '#3F51B5',
-  //           secondary: '#002060',
-  //           info: '#8b95d3', // Custom color for the blue headers
-  //           background: '#f5f5f5',
-  //         },
-  //       },
-  //     },
-  //   },
-  // });
-
-  // createApp(App)
-  //   .use(vuetify)
-  //   .use(router) // Use router
-  //   .mount('#app');
+  mounted() {
+    this.fetchApplications(); // Fetch applications when the component is mounted
+  },
 };
 </script>
 
@@ -318,27 +330,17 @@ export default {
   border-bottom: 1px solid rgba(0, 0, 0, 0.12); /* Vuetify default divider color */
 }
 
-/* Specific styling adjustments for the status select for better visual feedback */
 .status-select .v-field__outline {
   border-width: 2px !important;
 }
 
-/* Optional: Adjust select input background based on status */
-.status-select.v-select--completed .v-field__input {
-  background-color: #D4EDDA; /* Light green for completed */
-}
-.status-select.v-select--incomplete .v-field__input {
-  background-color: #F8D7DA; /* Light red for incomplete */
-}
-
-/* Added style for selected row to give visual feedback */
 .selected-row {
   background-color: #e3f2fd; /* Light blue background for selected row */
   border-left: 5px solid #2196F3; /* Blue border to indicate selection */
 }
 
-/* Global font setting if needed for consistency across app */
 body {
   font-family: 'Inter', sans-serif;
 }
 </style>
+
